@@ -1,0 +1,1052 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation VPC Template P10 CHATELIN MICKAEL 
+Parameters:
+# demande mot de passe RDS
+  PwdBD:
+    NoEcho: true
+    Description: Mot de passe ADMIN de la base de donnée
+    Type: String
+    MinLength: 8
+    MaxLength: 30
+
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: 'Ubuntu Server 20.04 LTS'
+    Default: ami-0c6ebbd55ab05f070
+
+  AvailabilityZone:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: Zone de disponibilite dans laquelle l'instance sera lance
+    Default: eu-west-3a
+  InstanceType: 
+    Type: "String"
+    Description: T2.MICRO GRATUITE
+    Default: t2.micro
+    AllowedValues:
+     - t2.micro
+    ConstraintDescription: must be a valid EC2 INSTANCE
+  KeyName:
+    Description: Paire de cles SSH pour se connecter à l'instance
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: CLEAWS2K2
+
+Resources:
+# création VPC
+  PubPrivateVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16 
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: MonVPCP10
+
+# création subnet public
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-3a
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.1.0/24
+      Tags:
+        - Key: Name
+          Value: Sub-public-A
+      VpcId: !Ref PubPrivateVPC
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-3b
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: Sub-public-b
+      VpcId: !Ref PubPrivateVPC
+
+  PublicSubnet3:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-3c
+      MapPublicIpOnLaunch: true
+      CidrBlock: 10.0.3.0/24
+      Tags:
+        - Key: Name
+          Value: Sub-public-c
+      VpcId: !Ref PubPrivateVPC
+
+# création subnet private
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-3a
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: Sub-private-A
+      VpcId: !Ref PubPrivateVPC
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: eu-west-3b
+      CidrBlock: 10.0.20.0/24
+      Tags:
+        - Key: Name
+          Value: Sub-private-B
+      VpcId: !Ref PubPrivateVPC
+
+  PrivateSubnet3:
+   Type: 'AWS::EC2::Subnet'
+   Properties:
+     AvailabilityZone: eu-west-3c
+     CidrBlock: 10.0.30.0/24
+     Tags:
+      - Key: Name
+        Value: Sub-private-C
+     VpcId: !Ref PubPrivateVPC
+
+# subnet pour RDS
+  RDSubPrivate:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: RDS-Subnet-Private
+      DBSubnetGroupName: RDS-Subnet-Private
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+# création  Gateway du VPC
+  InternetGW:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: PubPrivateVPC-Internet-Gateway
+
+  AttachInternetGW:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      InternetGatewayId: !Ref InternetGW
+
+# création NAT et EIP des subnet privé
+  NatEIPA:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: PubPrivateVPC
+  
+  NatEIPB:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: PubPrivateVPC
+
+  NatEIPC:
+   Type: 'AWS::EC2::EIP'
+   Properties:
+     Domain: PubPrivateVPC
+
+  NatGWA:
+    DependsOn:
+      - AttachInternetGW
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt NatEIPA.AllocationId
+      SubnetId: !Ref PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: Nat-A
+
+  NatGWB:
+    DependsOn:
+      - AttachInternetGW
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt NatEIPB.AllocationId
+      SubnetId: !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: Nat-B
+
+  NatGWC:
+    DependsOn:
+      - AttachInternetGW
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt NatEIPC.AllocationId
+      SubnetId: !Ref PrivateSubnet3
+      Tags:
+        - Key: Name
+          Value: Nat-C
+
+# création des route et route table des subnet
+  PubRouteTA:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-public-A
+
+  AttachPubRouteA:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PubRouteTA
+      SubnetId: !Ref PublicSubnet1
+
+  PubRouteTB:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-public-B
+
+  AttachPubRouteB:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PubRouteTB
+      SubnetId: !Ref PublicSubnet2
+
+  PubRouteTC:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-public-C
+
+  AttachPubRouteC:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PubRouteTC
+      SubnetId: !Ref PublicSubnet3
+
+  PriRouteTA:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-private-A
+
+  AttachPriRouteA:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PriRouteTA
+      SubnetId: !Ref PrivateSubnet1
+
+  PriRouteTB:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-private-B
+
+  AttachPriRouteB:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PriRouteTB
+      SubnetId: !Ref PrivateSubnet2
+
+  PriRouteTC:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Route-private-C
+
+  AttachPriRouteC:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PriRouteTC
+      SubnetId: !Ref PrivateSubnet3
+
+# définition des route
+  DefPubRouteA:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGW
+      RouteTableId: !Ref PubRouteTA
+
+  DefPubRouteB:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGW
+      RouteTableId: !Ref PubRouteTB
+
+  DefPriRouteA:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGWA
+      RouteTableId: !Ref PriRouteTA
+
+  DefPriRouteB:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGWB
+      RouteTableId: !Ref PriRouteTB
+
+  DefPubRouteC:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGW
+      RouteTableId: !Ref PubRouteTC
+
+  DefPriRouteC:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref VPNInstance
+      RouteTableId: !Ref PriRouteTC
+
+# création des security group
+  ConnectAmiSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Pour docker port 80 ssh,http,https,icmp Ubuntu
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: '-1'
+          ToPort: '-1'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Security groupe server
+
+  RDSsecgr:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: RDS-SecGr
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          CidrIp: 10.0.0.0/16
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Security groupe RDS
+
+  SGLoadBalencer:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: SecGroup for Load Balencer
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: Security groupe Load Balancer
+
+  EFSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: "security group EFS"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: '2049'
+          ToPort: '2049'
+          CidrIp: 10.0.0.0/16
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name 
+          Value: security group EFS
+
+  ICMPSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: "security group ping"
+      GroupName: "ICMP-SG"
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: '8'
+          ToPort: '-1'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+
+  WebIntraSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: "Groupe de Securite Web Intranet"
+      SecurityGroupIngress:
+        - IpProtocol: tcp 
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp 
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 10.0.0.0/31
+      VpcId: !Ref PubPrivateVPC
+
+  VPNSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: "Groupe securite VPN"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '1194'
+          ToPort: '1194'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+
+  SSHOnlySecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Acces SSH SEULEMENT'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+
+  AllowAllTraffic:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'tout le traffic'
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          FromPort: "-1"
+          ToPort: "-1"
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref PubPrivateVPC
+
+#création utilisateur + accès S3
+
+  UserWP:
+    Type: AWS::IAM::User
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  WPAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName:
+        !Ref UserWP
+
+#Création du S3 
+
+  S3BucketWP:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: s3datawpmika
+
+# création instance EC2 Website #
+  Server:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn:
+      - DBserver
+      - ELBtargetgroup
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref ImageId
+      KeyName: CLEAWS2K2
+      SecurityGroups:
+        - !Ref ConnectAmiSG
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt update
+          apt install stress docker.io -y
+          systemctl start docker
+          systemctl enable docker
+          cd /var
+          mkdir www 
+          cd www
+          mkdir html
+          cd html
+          docker run --name wordpress -e WORDPRESS_DB_HOST=${DBserver.Endpoint.Address}:3306 -e WORDPRESS_DB_USER=adminrds -e WORDPRESS_DB_PASSWORD=${PwdBD} -e WORDPRESS_DB_NAME=dockerwpdb -p 80:80 -p 443:443 -v `pwd`:`pwd` -w `pwd` -d conetix/wordpress-with-wp-cli
+          sleep 10
+          docker exec wordpress wp core config --dbname=dockerwordpressdb --dbuser=adminwp --dbpass=${PwdBD} --dbprefix=wp_ --dbhost=${DBserver}
+          chmod 666 wp-config.php
+          sed -i "20i\define( 'AS3CF_SETTINGS', serialize( array('provider' => 'aws','bucket' => 's3bucketp10','access-key-id' => '${WPAccessKey}','secret-access-key' => '${WPAccessKey.SecretAccessKey}','copy-to-s3' => true,'enable-object-prefix' => true,'object-prefix' => 'wp-content/uploads/','serve-from-s3' => true )));" wp-config.php
+          docker exec wordpress wp core install --url=${ELBloadbalancer.DNSName} --title=Projet10 --admin_user=admin --admin_password='password' --admin_email=METTRE VOTRE MAIL ICI
+          docker exec wordpress wp theme install quark
+          docker exec wordpress wp theme activate quark
+          docker exec wordpress wp plugin install amazon-s3-and-cloudfront --activate
+          apt install git binutils -y
+          cd /root
+          git clone https://github.com/aws/efs-utils
+          cd efs-utils
+          ./build-deb.sh
+          apt -y install ./build/amazon-efs-utils*deb
+          mkdir /wp_data
+          echo "${EFSFileSystem}:/ /wp_data efs   _netdev,noresvport,tls 0 0" >> /etc/fstab  
+          mount /wp_data 
+          sleep 20
+        # mount -t efs -o tls ${EFSFileSystem}:/ efs
+        # sleep 20
+        # mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${EFSFileSystem}.efs.eu-west-1.amazonaws.com:/ efs
+        # sleep 20 
+
+# INSTANCE VPN #
+  VPNInstance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !Ref ImageId
+      SubnetId: !Ref PublicSubnet3
+      KeyName: CLEAWS2K2
+      SourceDestCheck: false
+      SecurityGroupIds:
+        - !GetAtt VPNSecurityGroup.GroupId
+        - !GetAtt SSHOnlySecurityGroup.GroupId
+        - !GetAtt WebIntraSecurityGroup.GroupId
+        - !GetAtt ICMPSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: Instance VPN
+      PrivateIpAddress: 10.0.3.10
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt update -y
+          sudo apt-get upgrade -y
+          sudo echo 1 > /proc/sys/net/ipv4/ip_forward
+          sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+          echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+          echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
+          sudo apt install iptables-persistent -y
+          sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+          sudo touch /home/ubuntu/test.txt
+          cat << EOF > /home/ubuntu/cle_aws.pem
+          -----BEGIN RSA PRIVATE KEY-----
+  
+          -----END RSA PRIVATE KEY-----
+          EOF
+          sudo apt install openvpn -y
+          sudo systemctl enable openvpn.service
+          sudo start openvpn.service
+          cat << EOF > /etc/openvpn/p2p.conf
+          dev tun
+          port 1194
+          remote 109.221.243.31
+          ifconfig 172.16.0.2 172.16.0.1
+          route 192.168.1.0 255.255.255.0
+          route 192.168.2.0 255.255.255.0
+          secret /etc/openvpn/p2p.key
+          cipher AES-256-CBC
+          user nobody
+          group nogroup
+          ping-restart 45
+          persist-tun
+          persist-key
+          status /var/log/openvpn/openvpn-status.log 
+          verb 3
+          EOF
+          cat << EOF > /etc/openvpn/p2p.key
+          -----BEGIN OpenVPN Static key V1-----
+
+          -----END OpenVPN Static key V1-----
+          EOF
+          chmod 777 /etc/openvpn/p2p.key
+          chown ubuntu:ubuntu /home/ubuntu/cle_aws.pem 
+
+
+
+# INTRANET INSTANCE #
+  IntraWebInstance:
+    DependsOn: 
+      - VPNInstance
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      KeyName: CLEAWS2K2
+      SubnetId: !Ref PrivateSubnet3
+      ImageId: !Ref ImageId
+      SourceDestCheck: false
+      SecurityGroupIds:
+        -  !GetAtt VPNSecurityGroup.GroupId
+        - !GetAtt SSHOnlySecurityGroup.GroupId
+        - !GetAtt WebIntraSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: Intranet Website
+      PrivateIpAddress: 10.0.30.10
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/sh
+          sudo apt update -y
+          sudo apt install apache2 -y   
+
+
+  DBserver:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBName: dockerwpdb
+      DBInstanceIdentifier: databasewp01
+      Engine: MySQL
+      MultiAZ: true
+      MasterUsername: adminrds
+      MasterUserPassword: !Ref PwdBD
+      DBInstanceClass: db.t2.micro
+      AllocatedStorage: '20'
+      VPCSecurityGroups:
+        - !Ref RDSsecgr
+      DBSubnetGroupName: !Ref RDSubPrivate
+      BackupRetentionPeriod: 3
+      Tags:
+        - Key: Name
+          Value: DataBaseWP
+
+  DBserverReplica:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      SourceDBInstanceIdentifier: !Ref DBserver
+      DBInstanceIdentifier: databasewpreplica01
+      AvailabilityZone: eu-west-3b
+      DBInstanceClass: db.t2.micro
+      Tags:
+        - Key: Name
+          Value: Replica DB Wordpress
+
+
+# définition des acl des subnet
+#Subnet Public
+  ACLsubPubA:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: SecurityACLPublicA
+  InACLPubASSHfree:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubA
+      RuleNumber: 101
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0 #mettre ip public FAI
+      PortRange:
+         From: 22
+         To: 22
+  InACLPubASSHorange:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubA
+      RuleNumber: 102
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0 #mettre ip public FAI
+      PortRange:
+         From: 22
+         To: 22
+  InACLPubAweb80:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubA
+      RuleNumber: 130
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+         From: 80
+         To: 80
+  InACLPubAupdate:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubA
+      RuleNumber: 150
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+         From: 32768
+         To: 61000
+  OutACLPubA:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubA
+      RuleNumber: 100
+      Protocol: -1
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  AssoACLPubSubA:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      NetworkAclId: !Ref ACLsubPubA
+
+  ACLsubPubB:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: SecurityACLPublicB
+  InACLPubBSSHfree:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubB
+      RuleNumber: 101
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0 #mettre ip public FAI
+      PortRange:
+         From: 22
+         To: 22
+  InACLPubBSSHorange:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubB
+      RuleNumber: 102
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0 #mettre ip public FAI
+      PortRange:
+         From: 22
+         To: 22
+  InACLPubBweb80:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubB
+      RuleNumber: 130
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+         From: 80
+         To: 80
+  InACLPubBupdate:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubB
+      RuleNumber: 150
+      Protocol: 6
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+         From: 32768
+         To: 61000
+  OutACLpubB:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPubB
+      RuleNumber: 100
+      Protocol: -1
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  AssoACLPubSubB:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      NetworkAclId: !Ref ACLsubPubB
+
+
+#Subnet Private
+  ACLsubPriA:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: SecurityACLPrivateA
+  InACLPriA:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPriA
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  OutACLPriA:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPriA
+      RuleNumber: 100
+      Protocol: -1
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  AssoACLPriSubA:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      NetworkAclId: !Ref ACLsubPriA
+
+  ACLsubPriB:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref PubPrivateVPC
+      Tags:
+        - Key: Name
+          Value: SecurityACLPrivateB
+  InACLPriB:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPriB
+      RuleNumber: 100
+      Protocol: -1
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  OutACLPriB:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref ACLsubPriB
+      RuleNumber: 100
+      Protocol: -1
+      Egress: true
+      RuleAction: allow
+      CidrBlock: 0.0.0.0/0
+  AssoACLPriSubB:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      NetworkAclId: !Ref ACLsubPriB
+
+
+# création de l'auto-scalling group et load-balancer
+  AutoScallingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      AutoScalingGroupName: ASG-web-wp
+      AvailabilityZones:
+        - 'Fn::Select':
+            - 0
+            - 'Fn::GetAZs': !Ref AWS::Region
+        - 'Fn::Select':
+            - 1
+            - 'Fn::GetAZs': !Ref AWS::Region
+      VPCZoneIdentifier: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      DesiredCapacity: 2
+      MaxSize: 6
+      MinSize: 2
+      HealthCheckGracePeriod: '60'
+      LaunchConfigurationName: !Ref Server
+      TargetGroupARNs:
+        - !Ref ELBtargetgroup
+      NotificationConfigurations:
+      - TopicARN:
+          Ref: NotifMail
+        NotificationTypes:
+          - 'autoscaling:EC2_INSTANCE_LAUNCH'
+
+  ELBloadbalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref SGLoadBalencer
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  ELBtargetgroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: Target-Group-WordPress
+      VpcId: !Ref PubPrivateVPC
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: 86400
+
+  ELBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      LoadBalancerArn: !Ref ELBloadbalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ELBtargetgroup
+
+# création des alerte et notification
+# gestion d'autoscaling (+1/-1)
+
+  AutoScaleUp:
+    DependsOn: AutoScallingGroup
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScallingGroup
+      Cooldown: 60
+      ScalingAdjustment: 1
+
+  AutoScaleDown:
+    DependsOn: AutoScallingGroup
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScallingGroup
+      Cooldown: 60
+      ScalingAdjustment: -1
+  
+# Alertes sur l'état du CPU après 5 minutes
+
+  CPUAlerteHigh:
+    DependsOn: AutoScallingGroup
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: '+1 instance si CPU > 80% apres 5 minutes'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '80'
+      AlarmActions:
+        - !Ref AutoScaleUp
+        - !Ref SNSTopic
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AutoScallingGroup
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlerteLow:
+    DependsOn: AutoScallingGroup
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: '-1 instance si CPU < 60% apres 5 minutes'
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '60'
+      AlarmActions:
+        - !Ref AutoScaleDown
+        - !Ref SNSTopic
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref AutoScallingGroup
+      ComparisonOperator: LessThanThreshold
+
+#EFS 
+
+  EFSFileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      BackupPolicy:
+        Status: ENABLED
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_60_DAYS
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Environment
+          Value: test 
+        - Key: Name 
+          Value: VPC-EFS
+        - Key: Project
+          Value: wp
+        - Key: createdBy
+          Value: MikaSysAdmin
+
+  MountTarget1:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SecurityGroups:
+        - !Ref EFSSecurityGroup
+      SubnetId: !Ref PublicSubnet1
+
+  MountTarget2:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SecurityGroups: 
+        - !Ref EFSSecurityGroup
+      SubnetId: !Ref PublicSubnet2
+
+#Notifications
+
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "Notif"
+      TopicName: "Notif"
+
+  NotifMail:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      Subscription:
+        - Endpoint: VOTRE EMAIL ICI
+          Protocol: email
+
+
+  # Sortie standard clé accès S3 URL site
+
+Outputs:
+  URL:
+    Description: URL du site
+    Value:
+      'Fn::Join':
+        - ''
+        - - 'http://'
+          - 'Fn::GetAtt':
+              - ELBloadbalancer
+              - DNSName
+
+  AccessKey:
+    Value:
+      !Ref WPAccessKey
+  SecretKeyformyaccesskey:
+    Value: !GetAtt WPAccessKey.SecretAccessKey
+
+  EFS:
+    Description: The created EFS 
+    Value: !Ref EFSFileSystem
+
+  EFSMountTarget1:
+    Description: The EFS MountTarget1
+    Value: !Ref MountTarget1
+
+  EFSMountTarget2:
+    Description: The EFS MountTarget2
+    Value: !Ref MountTarget2
+
+  SNSTopic:
+    Description: "Notification"
+    Value: !Ref "SNSTopic"
+
+  TrafficCPUAlerteHigh:
+    Description: "CloudWatch Reference Web AlarmHigh"
+    Value: !Ref "CPUAlerteHigh"
+
+  TrafficCPUAlerteLow: 
+    Description: "CloudWatch Reference Web AlarmLow"
+    Value: !Ref "CPUAlerteLow" 

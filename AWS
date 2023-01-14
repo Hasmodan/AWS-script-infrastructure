@@ -1,0 +1,4 @@
+Création du réseau avec 3 zones de disponibilités + IGW/Nat, instance EC2 (avec Ip Elastique) sur deux zones de dispo pour la haute disponibilité, 
+groupe de sécurité, RDS (Multi AZ) avec Réplica et EFS, ELB avec target group et groupe auto scaling dès qu'une instance 
+dépasse les 80%cpu une autre ce crée automatiquement selon la launch configuration avec un mail, bucket S3 et instance VPN (OpenVpn) 
+via EC2 tunnel IPSEC de mon réseau local vers AWS.
